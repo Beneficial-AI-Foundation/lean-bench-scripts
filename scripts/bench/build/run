@@ -10,7 +10,15 @@ cd "$RADAR_REPO"
 # Prepare build (cache is only available for Mathlib-dependent projects)
 lake exe cache get || true
 
-lake build Aeneas
+# Pre-build expensive dependencies so they stay out of the measured build below.
+# Only build each when the project actually depends on it — many projects use
+# neither Aeneas nor VCVio, and an unconditional `lake build` of a missing target
+# would abort the run under `set -e`.
+for dep in Aeneas VCVio; do
+  if grep -qi "\"$dep\"" lake-manifest.json 2>/dev/null; then
+    lake build "$dep"
+  fi
+done
 
 # Run build
 LAKE_OVERRIDE_LEAN=true LEAN=$(realpath "$BENCH/build/fake-root/bin/lean") \
@@ -22,8 +30,7 @@ LAKE_OVERRIDE_LEAN=true LEAN=$(realpath "$BENCH/build/fake-root/bin/lean") \
 lakeprof report -pj | jq -c '{metric: "build/lakeprof/longest build path//wall-clock", value: .[-1][2], unit: "s"}' >> "$RADAR_OUT"
 lakeprof report -rj | jq -c '{metric: "build/lakeprof/longest rebuild path//wall-clock", value: .[-1][2], unit: "s"}' >> "$RADAR_OUT"
 
-# Upload lakeprof report
-# Guarded to prevent accidental uploads (which wouldn't work anyways) during local runs.
-if [ -f build_upload_lakeprof_report ]; then
+# Upload lakeprof report if a base URL is configured (set by the runner; absent in local runs).
+if [ -n "${LAKEPROF_UPLOAD_BASE:-}" ]; then
   python3 "$BENCH/build/lakeprof_report_upload.py"
 fi

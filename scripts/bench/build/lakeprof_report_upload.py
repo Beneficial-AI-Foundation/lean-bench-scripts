@@ -36,14 +36,21 @@ def main() -> None:
         return
     host = host.rstrip("/")
 
-    # Derive the per-repo path segment from the repo-under-test's origin remote,
-    # so a single runner serving multiple repos uploads each to its own subdir.
-    # This basename matches the repo `name` in the radar config, which is what
-    # determines the lakeprofReportUrl the UI links to.
-    remote = run_stdout("git", "remote", "get-url", "origin").strip()
-    repo = remote.rstrip("/").rsplit("/", 1)[-1]
-    if repo.endswith(".git"):
-        repo = repo[: -len(".git")]
+    # Derive the per-repo path segment. The runner does not expose the radar
+    # repo name as a string, but RADAR_CACHE is laid out as
+    # <cache>/repos/<repo>/cache, so its parent dir is the canonical repo name
+    # (the same `name` in the radar config that determines the
+    # lakeprofReportUrl the UI links to). Fall back to the origin URL basename
+    # for local runs executed against a normal clone, where RADAR_CACHE is
+    # unset.
+    cache_dir = os.environ.get("RADAR_CACHE")
+    if cache_dir:
+        repo = Path(cache_dir).parent.name
+    else:
+        remote = run_stdout("git", "remote", "get-url", "origin").strip()
+        repo = remote.rstrip("/").rsplit("/", 1)[-1]
+        if repo.endswith(".git"):
+            repo = repo[: -len(".git")]
 
     sha = run_stdout("git", "rev-parse", "@").strip()
     base_url = f"{host}/{repo}/{sha}"

@@ -14,8 +14,16 @@ lake exe cache get || true
 # Only build each when the project actually depends on it — many projects use
 # neither Aeneas nor VCVio, and an unconditional `lake build` of a missing target
 # would abort the run under `set -e`.
+#
+# Match only entries in `.packages`, never the manifest's top-level `name`: that field holds
+# the *root* package, so a plain grep for "Aeneas" also fires when benchmarking the Aeneas
+# repo itself, pre-building the very target we are about to measure and reporting a build
+# time of ~0. Compare case-insensitively — aeneas declares `package «aeneas»`, so downstream
+# manifests record the dependency as "aeneas" while the build target is «Aeneas».
 for dep in Aeneas VCVio; do
-  if grep -qi "\"$dep\"" lake-manifest.json 2>/dev/null; then
+  if jq -e --arg d "$dep" \
+       '.packages[]? | select((.name | ascii_downcase) == ($d | ascii_downcase))' \
+       lake-manifest.json >/dev/null 2>&1; then
     lake build "$dep"
   fi
 done

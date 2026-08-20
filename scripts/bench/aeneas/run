@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Aeneas is not a Lean-only repo: its Lean project is in backends/lean. There is no per-run
+# knob for a subdirectory, so retarget RADAR_REPO at the Lean project root. Everything
+# downstream treats RADAR_REPO as "the Lean project root" and works unchanged: build/run cds
+# into it, size/run globs it, and the lakeprof upload derives the repo name from RADAR_CACHE
+# and the sha from git in the cwd (still the same repo).
+export RADAR_REPO="$RADAR_REPO/backends/lean"
+
+# backends/lean/lakefile.lean gates precompileModules on `CI` being unset. Precompilation
+# cannot work here: build/run points LEAN at fake-root/bin/lean, whose `--print-prefix`
+# reports the fake root as the Lean sysroot, so lake compiles the generated C with
+# `-I<fake-root>/include` and dies on a missing lean/lean.h. Setting CI matches what aeneas'
+# own CI does ("Precompiling modules triggers issues in CI so we deactivate this") and is
+# pinned rather than inherited so the build shape cannot drift with the environment.
+export CI=true
+
+exec "$RADAR_BENCH_REPO/scripts/bench/run"

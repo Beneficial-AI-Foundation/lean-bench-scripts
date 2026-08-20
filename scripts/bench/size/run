@@ -19,9 +19,15 @@ def output_result(metric: str, value: float, unit: str | None = None) -> None:
 def measure_leans() -> None:
     lean_files = 0
     lean_lines = 0
-    for path in REPO.glob("Cslib/**/*.lean"):
+    # Every first-party .lean under the project root. `.lake` holds vendored
+    # dependencies (mathlib et al), which are not this repo's source.
+    for path in REPO.rglob("*.lean"):
+        if ".lake" in path.parts:
+            continue
         lean_files += 1
-        with open(path) as f:
+        # Lean sources are full of non-ASCII; the locale's default encoding is
+        # ASCII when LANG is unset (e.g. under systemd), which would raise.
+        with open(path, encoding="utf-8") as f:
             lean_lines += sum(1 for _ in f)
     output_result("size/.lean//files", lean_files)
     output_result("size/.lean//lines", lean_lines)

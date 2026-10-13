@@ -2,9 +2,21 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 from pathlib import Path
+
+# Column names for each table, in the order `lakeprof report --all -j` prints them.
+PATH_FIELDS = ("time", "share", "cum_time", "cum_share", "module")
+ALL_TABLES = {
+    "critical_path": PATH_FIELDS,
+    "rebuild_critical_path": PATH_FIELDS,
+    "avg_contribution": PATH_FIELDS,
+    "simulated_times": ("cpus", "time", "parallelism"),
+}
 
 
 def run(*args: str) -> None:
@@ -77,6 +89,31 @@ def main() -> None:
     run("curl", *auth, "-T", "index.html", f"{base_url}/index.html")
     run("curl", *auth, "-T", "lakeprof.log", f"{base_url}/lakeprof.log")
     run("curl", *auth, "-T", "lakeprof.trace_event", f"{base_url}/lakeprof.trace_event")
+
+    # Full report bundle: everything `lakeprof report --all` produces, for download.
+    # Its files are written to a temp dir under their own names (-c/-d) so the
+    # Perfetto trace uploaded above is never touched.
+    with tempfile.TemporaryDirectory() as tmp:
+        bundle = Path(tmp) / f"{repo}-{sha}"
+        bundle.mkdir()
+        lines = run_stdout(
+            "lakeprof", "report", "--all", "-j",
+            "-c", str(bundle / "lakeprof-all.trace_event"),
+            "-d", str(bundle / "lakeprof-all.dot"),
+        ).splitlines()
+        if len(lines) != len(ALL_TABLES):
+            sys.exit(f"lakeprof report --all -j printed {len(lines)} tables, expected {len(ALL_TABLES)}")
+        tables = {
+            name: [dict(zip(fields, row, strict=True)) for row in json.loads(line)]
+            for (name, fields), line in zip(ALL_TABLES.items(), lines)
+        }
+        (bundle / "lakeprof-all.json").write_text(json.dumps(tables, indent=2))
+        shutil.copy("lakeprof.log", bundle)
+
+        tarball = Path(tmp) / "lakeprof-all.tar.gz"
+        with tarfile.open(tarball, "w:gz") as tar:
+            tar.add(bundle, arcname=bundle.name)
+        run("curl", *auth, "-T", str(tarball), f"{base_url}/lakeprof-all.tar.gz")
 
 
 if __name__ == "__main__":

@@ -25,3 +25,5 @@ The following metrics are collected individually for each module:
 
 If the file `build_upload_lakeprof_report` is present in the repo root,
 the lakeprof report will be uploaded once the benchmark run concludes.
+Alongside it, `lakeprof-all.tar.gz` holds the full `lakeprof report --all` output
+(all tables as labeled JSON, the dependency graph, all traces) and the raw `lakeprof.log`.
